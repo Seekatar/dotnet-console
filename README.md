@@ -26,3 +26,24 @@ helm create test
 
 helm install -f .\test\values.yaml test .\test
 ```
+
+## Adding Unit Test and Code Coverage
+
+```powershell
+# add the xunit project
+cd src
+dotnet new xunit -o unit
+
+# add package and project references to it
+cd unit
+dotnet add unit.csproj package shouldly
+dotnet add unit.csproj package coverlet.msbuild
+dotnet add unit.csproj reference ../dotnet-console/dotnet-console.csproj
+```
+
+In program.cs allow the unit test to get `internal` classes
+
+```csharp
+using System.Runtime.CompilerServices;
+[assembly: InternalsVisibleTo("unit")]
+```

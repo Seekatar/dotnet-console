@@ -18,10 +18,17 @@ param (
         }
      })]
     [string[]] $Tasks,
-    [switch] $DryRun
+    [switch] $Wait,
+    [string] $DockerTag = [DateTime]::Now.ToString("MMdd-HHmmss"),
+    [switch] $Plain,
+    [switch] $NoCache,
+    [switch] $KeepDocker,
+    [switch] $NoBuildKit,
+    [bool] $DeleteDocker = $True
 )
 
 $currentTask = ""
+$imageName = "dotnet-console"
 
 # execute a script, checking lastexit code
 function executeSB
@@ -30,23 +37,21 @@ function executeSB
 param(
     [Parameter(Mandatory)]
     [scriptblock] $ScriptBlock,
-    [string] $WorkingDirectory = $PSScriptRoot,
+    [string] $RelativeDirectory = "",
     [string] $TaskName = $currentTask
 )
-    if ($WorkingDirectory) {
-        Push-Location $WorkingDirectory
-    }
+    Push-Location (Join-Path $PSScriptRoot $RelativeDirectory)
+
     try {
+        $global:LASTEXITCODE = 0
+
         Invoke-Command -ScriptBlock $ScriptBlock
-        $LASTEXITCODE = 0
 
         if ($LASTEXITCODE -ne 0) {
             throw "Error executing command '$TaskName', last exit $LASTEXITCODE"
         }
     } finally {
-        if ($WorkingDirectory) {
-            Pop-Location
-        }
+        Pop-Location
     }
 }
 
@@ -71,8 +76,32 @@ foreach ($currentTask in $Tasks) {
                 }
               }
             'buildDocker' {
-                executeSB {
-                    docker build --rm --tag dotnet-test:latest .
+                $extra = @()
+                if ($Plain) {
+                    $extra += "--progress","plain"
+                }
+                if ($DeleteDocker) {
+                    $extra += "--rm"
+                }
+                if ($NoCache) {
+                    $extra += "--no-cache"
+                }
+                Write-Verbose "Extra is $($extra | Out-String)"
+                $dir = Join-Path $PSScriptRoot src
+                Copy-Item (Join-Path $PSScriptRoot DevOps/Docker/*ocker*) $dir -Force
+                if ($NoBuildKit) {
+                    $env:DOCKER_BUILDKIT=0
+                }
+                executeSB -RelativeDir 'src' {
+                    docker build  `
+                                 --tag ${imageName}:$DockerTag `
+                                 --file ../DevOps/Docker/Dockerfile `
+                                 @extra `
+                                 .
+                }
+                Remove-Item "$dir/*ocker*" -Fo -ErrorAction Ignore
+                if ($NoBuildKit) {
+                    $env:DOCKER_BUILDKIT=1 # default
                 }
             }
             'pushDocker' {
@@ -80,6 +109,7 @@ foreach ($currentTask in $Tasks) {
                     docker image tag dotnet-test k3s-server:5000/dotnet-test
                     docker push k3s-server:5000/dotnet-test
                 }
+
             }
             'installHelm' {
                 $valuesFile = Join-Path $PSScriptRoot DevOps/test/values.yaml
