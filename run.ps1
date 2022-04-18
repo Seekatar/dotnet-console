@@ -1,4 +1,5 @@
 #! pwsh
+[CmdletBinding()]
 param (
     [ArgumentCompleter({
         param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
@@ -18,10 +19,18 @@ param (
         }
      })]
     [string[]] $Tasks,
-    [switch] $DryRun
+    [switch] $Wait,
+    [string] $DockerTag = [DateTime]::Now.ToString("MMdd-HHmmss"),
+    [switch] $Plain,
+    [switch] $NoCache,
+    [switch] $KeepDocker,
+    [switch] $NoBuildKit,
+    [string] $DockerFile = "Dockerfile",
+    [switch] $NoRm
 )
 
 $currentTask = ""
+$imageName = "dotnet-console"
 
 # execute a script, checking lastexit code
 function executeSB
@@ -30,23 +39,21 @@ function executeSB
 param(
     [Parameter(Mandatory)]
     [scriptblock] $ScriptBlock,
-    [string] $WorkingDirectory = $PSScriptRoot,
+    [string] $RelativeDirectory = "",
     [string] $TaskName = $currentTask
 )
-    if ($WorkingDirectory) {
-        Push-Location $WorkingDirectory
-    }
+    Push-Location (Join-Path $PSScriptRoot $RelativeDirectory)
+
     try {
+        $global:LASTEXITCODE = 0
+
         Invoke-Command -ScriptBlock $ScriptBlock
-        $LASTEXITCODE = 0
 
         if ($LASTEXITCODE -ne 0) {
             throw "Error executing command '$TaskName', last exit $LASTEXITCODE"
         }
     } finally {
-        if ($WorkingDirectory) {
-            Pop-Location
-        }
+        Pop-Location
     }
 }
 
@@ -67,12 +74,63 @@ foreach ($currentTask in $Tasks) {
         switch ($currentTask) {
             'runDocker' {
                 executeSB {
-                    docker run --rm dotnet-test
+                    docker run --rm dotnet-console
                 }
               }
             'buildDocker' {
+                $extra = @()
+                if ($Plain) {
+                    $extra += "--progress","plain"
+                }
+                if (!$NoRm) {
+                    $extra += "--rm"
+                }
+                if ($NoCache) {
+                    $extra += "--no-cache"
+                }
+                Write-Verbose "Extra is $($extra | Out-String)"
+                $dir = Join-Path $PSScriptRoot src
+                Copy-Item (Join-Path $PSScriptRoot DevOps/Docker/*ocker*) $dir -Force
+                if ($NoBuildKit) {
+                    $env:DOCKER_BUILDKIT=0
+                }
+                executeSB -RelativeDir 'src' {
+                    docker build  `
+                                 --tag ${imageName}:$DockerTag `
+                                 --tag ${imageName}:latest `
+                                 --file $DockerFile `
+                                 @extra `
+                                 .
+                }
+                Remove-Item "$dir/*ocker*" -Fo -ErrorAction Ignore
+                if ($NoBuildKit) {
+                    $env:DOCKER_BUILDKIT=1 # default
+                }
+            }
+            'getDockerTest' {
                 executeSB {
-                    docker build --rm --tag dotnet-test:latest .
+                    $unittestslayerid=$(docker images --filter "label=unittestlayer=true" -q | Select-Object -first 1)
+                    if ($unittestslayerid) {
+                        docker create --name unittestcontainer $unittestslayerid
+                        Remove-Item ./testresults/* -Recurse -Force -ErrorAction Ignore
+                        docker cp unittestcontainer:/out/testresults ./testresults
+                        docker stop unittestcontainer
+                        docker rm unittestcontainer
+                        docker rmi $unittestslayerid
+                        if (Test-Path ./testresults/testresults/UnitTests.trx) {
+                            $test = [xml](Get-Content .\testresults\testresults\UnitTests.trx -Raw)
+                            $finish = [DateTime]::Parse($test.TestRun.Times.finish)
+
+                            $test.TestRun.ResultSummary.Counters.passed
+                            Write-Output "Test finished at $($finish.ToString("HH:mm:ss"))"
+                            Write-Output "  Outcome is: $($test.TestRun.ResultSummary.outcome)"
+                            Write-Output "  Success is $($test.TestRun.ResultSummary.Counters.passed)/$($test.TestRun.ResultSummary.Counters.total)"
+                        } else {
+                            Write-Warning "No output found in ./testresults/testresults/UnitTests.trx"
+                        }
+                    } else {
+                        Write-Warning "No image found with label unittestlayer=true"
+                    }
                 }
             }
             'pushDocker' {
@@ -80,6 +138,7 @@ foreach ($currentTask in $Tasks) {
                     docker image tag dotnet-test k3s-server:5000/dotnet-test
                     docker push k3s-server:5000/dotnet-test
                 }
+
             }
             'installHelm' {
                 $valuesFile = Join-Path $PSScriptRoot DevOps/test/values.yaml

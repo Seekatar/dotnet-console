@@ -1,28 +1,50 @@
-# Dotnet Test App
+# Dotnet 6 Console Test App
 
-## Creating the Repo
+This has the source code, Dockerfiles, and build yaml for the blog post [Running .NET Unit tests in Docker](https://seekatar.github.io/2022/04/17/docker-dotnet-unittest.html)
+
+## Running Locally
+
+A helper script runs most of the commands. Here's a typical command to build and get the test output.
 
 ```powershell
-dotnet new console -o dotnet-test
+.\run.ps1 buildDocker, getDockerTest -DockerFile Dockerfile-3stage -NoBuildKit`
 ```
 
-## Adding Local Docker Registry
-
-[Official Docker Registry Doc](https://docs.docker.com/registry/)
+Then to run the little app.
 
 ```powershell
-# on K3S-server, start registry
-docker run -d -p 5000:5000 --name registry registry:2
-
-# anywhere, tag and push to the registry
-docker image tag dotnet-test k3s-server:5000/dotnet-test
-docker push k3s-server:5000/dotnet-test
+.\run.ps1 runDocker
 ```
 
-## Adding Helm
+## Creating the Console App
 
 ```powershell
-helm create test
+mkdir dotnet-console/src
+cd dotnet-console/src
+dotnet new console -o dotnet-console
+```
 
-helm install -f .\test\values.yaml test .\test
+Then to allow for something to unit test, I added a little waiter class in `program.cs`
+
+## Adding Unit Test and Code Coverage
+
+These commands add the unit test and code coverage to the scaffold code.
+
+```powershell
+# add the xunit project
+cd src
+dotnet new xunit -o unit
+
+# add package and project references to it
+cd unit
+dotnet add unit.csproj package shouldly
+dotnet add unit.csproj package coverlet.msbuild
+dotnet add unit.csproj reference ../dotnet-console/dotnet-console.csproj
+```
+
+In program.cs allow the unit test to get `internal` classes
+
+```csharp
+using System.Runtime.CompilerServices;
+[assembly: InternalsVisibleTo("unit")]
 ```

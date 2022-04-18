@@ -1,0 +1,95 @@
+name: "0.1.$(Rev:r)"
+
+parameters:
+- name: dockerfile
+  type: string
+  displayName: Dockerfile to run
+  default: Dockerfile
+  values:
+    - Dockerfile
+    - Dockerfile-2stage
+    - Dockerfile-2stage-copying-test
+    - Dockerfile-3stage
+    - Dockerfile-3stage-with-copy
+- name: unitTest
+  type: boolean
+  displayName: Run unit tests
+  default: true
+
+trigger:
+  branches:
+    include:
+    - 'main'
+    - release/*
+    - docker
+  paths:
+    exclude:
+    - '*.md'
+    - '*.ps1'
+
+# --------------
+variables:
+- name: imageName
+  value: dotnet-console
+- name: version
+  value: $(Build.BuildNumber)
+
+# --------------
+stages:
+- stage: build
+  variables: {}
+
+  jobs:
+  - job: build
+    pool:
+      vmImage: 'ubuntu-latest'
+    timeoutInMinutes: 20
+    cancelTimeoutInMinutes: 20
+    strategy:
+      maxParallel: 1
+
+    steps:
+    - checkout: self
+      persistCredentials: true
+      submodules: true
+
+    - task: PowerShell@2
+      displayName: 'Build Script'
+      inputs:
+        workingDirectory: $(System.DefaultWorkingDirectory)
+        filePath: '$(System.DefaultWorkingDirectory)/run.ps1'
+        arguments: '-Task buildDocker -DockerTag "$(version)" -Dockerfile ${{ parameters.dockerfile }}'
+        pwsh: true
+
+    - task: PowerShell@2
+      displayName: Get unit test output
+      continueOnError: false
+      inputs:
+        workingDirectory: $(System.DefaultWorkingDirectory)
+        targetType: 'inline'
+        script: |
+          $unittestslayerid=$(docker images --filter "label=unittestlayer=true" -q)
+          docker create --name unittestcontainer $unittestslayerid
+          docker cp unittestcontainer:/out/testresults ./testresults
+          docker stop unittestcontainer
+          docker rm unittestcontainer
+        pwsh: true
+      condition: ${{ parameters.unitTest }}
+
+    - task: PublishTestResults@2
+      displayName: 'Publish Test Results'
+      inputs:
+        testRunner: VSTest
+        testResultsFiles: '**/*.trx'
+        searchFolder: '$(System.DefaultWorkingDirectory)/testresults'
+        publishRunAttachments: true
+        failTaskOnFailedTests: true
+      condition: ${{ parameters.unitTest }}
+
+    - task: PublishCodeCoverageResults@1
+      inputs:
+        codeCoverageTool: 'cobertura'
+        summaryFileLocation: '$(System.DefaultWorkingDirectory)/testresults/coverage/coverage.cobertura.xml'
+        # reportDirectory: '$(System.DefaultWorkingDirectory)/testresults/coverage/reports'
+      displayName: 'Publish coverage reports'
+      condition: ${{ parameters.unitTest }}
