@@ -13,13 +13,15 @@ RUN dotnet restore
 COPY . .
 RUN dotnet publish "./dotnet-console/dotnet-console.csproj" -c Release -o /app/publish
 
+FROM build AS test
+WORKDIR /src
+RUN echo 1 >> byte
+LABEL unittestlayer=true
 WORKDIR /src/unit
 RUN dotnet test --logger "trx;LogFileName=UnitTests.trx" --results-directory /out/testresults /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:CoverletOutput=/out/testresults/coverage/
 
-
 FROM base AS final
-LABEL unittestlayer=true
+WORKDIR /app
 COPY --from=build /app/publish .
-COPY --from=build /out/testresults /out/testresults
-RUN ls -la /out/testresults
+COPY --from=test /src/byte .
 ENTRYPOINT ["dotnet", "dotnet-console.dll"]

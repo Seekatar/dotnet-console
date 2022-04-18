@@ -19,6 +19,7 @@ RUN dotnet test --logger "trx;LogFileName=UnitTests.trx" --results-directory /ou
 
 FROM base AS final
 LABEL unittestlayer=true
+WORKDIR /app
 COPY --from=build /app/publish .
 COPY --from=build /out/testresults /out/testresults
 RUN ls -la /out/testresults

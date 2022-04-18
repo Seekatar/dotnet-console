@@ -1,4 +1,5 @@
 #! pwsh
+[CmdletBinding()]
 param (
     [ArgumentCompleter({
         param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
@@ -24,6 +25,7 @@ param (
     [switch] $NoCache,
     [switch] $KeepDocker,
     [switch] $NoBuildKit,
+    [string] $DockerFile = "Dockerfile",
     [bool] $DeleteDocker = $True
 )
 
@@ -72,10 +74,11 @@ foreach ($currentTask in $Tasks) {
         switch ($currentTask) {
             'runDocker' {
                 executeSB {
-                    docker run --rm dotnet-test
+                    docker run --rm dotnet-console
                 }
               }
             'buildDocker' {
+                "DOCKER_BUILDKIT is set to $env:DOCKER_BUILDKIT"
                 $extra = @()
                 if ($Plain) {
                     $extra += "--progress","plain"
@@ -95,13 +98,40 @@ foreach ($currentTask in $Tasks) {
                 executeSB -RelativeDir 'src' {
                     docker build  `
                                  --tag ${imageName}:$DockerTag `
-                                 --file ../DevOps/Docker/Dockerfile `
+                                 --tag ${imageName}:latest `
+                                 --file $DockerFile `
                                  @extra `
                                  .
                 }
                 Remove-Item "$dir/*ocker*" -Fo -ErrorAction Ignore
                 if ($NoBuildKit) {
                     $env:DOCKER_BUILDKIT=1 # default
+                }
+            }
+            'getDockerTest' {
+                executeSB {
+                    $unittestslayerid=$(docker images --filter "label=unittestlayer=true" -q | Select-Object -first 1)
+                    if ($unittestslayerid) {
+                        docker create --name unittestcontainer $unittestslayerid
+                        Remove-Item ./testresults/* -Recurse -Force -ErrorAction Ignore
+                        docker cp unittestcontainer:/out/testresults ./testresults
+                        docker stop unittestcontainer
+                        docker rm unittestcontainer
+                        docker rmi $unittestslayerid
+                        if (Test-Path ./testresults/testresults/UnitTests.trx) {
+                            $test = [xml](Get-Content .\testresults\testresults\UnitTests.trx -Raw)
+                            $finish = [DateTime]::Parse($test.TestRun.Times.finish)
+
+                            $test.TestRun.ResultSummary.Counters.passed
+                            Write-Output "Test finished at $($finish.ToString("HH:mm:ss"))"
+                            Write-Output "  Outcome is: $($test.TestRun.ResultSummary.outcome)"
+                            Write-Output "  Success is $($test.TestRun.ResultSummary.Counters.passed)/$($test.TestRun.ResultSummary.Counters.total)"
+                        } else {
+                            Write-Warning "No output found in ./testresults/testresults/UnitTests.trx"
+                        }
+                    } else {
+                        Write-Warning "No image found with label unittestlayer=true"
+                    }
                 }
             }
             'pushDocker' {
