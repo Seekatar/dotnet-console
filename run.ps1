@@ -26,7 +26,7 @@ param (
     [switch] $KeepDocker,
     [switch] $NoBuildKit,
     [string] $DockerFile = "Dockerfile",
-    [bool] $DeleteDocker = $True
+    [switch] $NoRm
 )
 
 $currentTask = ""
@@ -78,12 +78,11 @@ foreach ($currentTask in $Tasks) {
                 }
               }
             'buildDocker' {
-                "DOCKER_BUILDKIT is set to $env:DOCKER_BUILDKIT"
                 $extra = @()
                 if ($Plain) {
                     $extra += "--progress","plain"
                 }
-                if ($DeleteDocker) {
+                if (!$NoRm) {
                     $extra += "--rm"
                 }
                 if ($NoCache) {

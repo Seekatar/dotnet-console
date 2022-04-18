@@ -1,33 +1,34 @@
-# Dotnet Test App
+# Dotnet 6 Console Test App
 
-## Creating the Repo
+This has the source code, Dockerfiles, and build yaml for the blog post [Running .NET Unit tests in Docker](https://seekatar.github.io/2022/04/17/docker-dotnet-unittest.html)
 
-```powershell
-dotnet new console -o dotnet-test
-```
+## Running Locally
 
-## Adding Local Docker Registry
-
-[Official Docker Registry Doc](https://docs.docker.com/registry/)
+A helper script runs most of the commands. Here's a typical command to build and get the test output.
 
 ```powershell
-# on K3S-server, start registry
-docker run -d -p 5000:5000 --name registry registry:2
-
-# anywhere, tag and push to the registry
-docker image tag dotnet-test k3s-server:5000/dotnet-test
-docker push k3s-server:5000/dotnet-test
+.\run.ps1 buildDocker, getDockerTest -DockerFile Dockerfile-3stage -NoBuildKit`
 ```
 
-## Adding Helm
+Then to run the little app.
 
 ```powershell
-helm create test
-
-helm install -f .\test\values.yaml test .\test
+.\run.ps1 runDocker
 ```
+
+## Creating the Console App
+
+```powershell
+mkdir dotnet-console/src
+cd dotnet-console/src
+dotnet new console -o dotnet-console
+```
+
+Then to allow for something to unit test, I added a little waiter class in `program.cs`
 
 ## Adding Unit Test and Code Coverage
+
+These commands add the unit test and code coverage to the scaffold code.
 
 ```powershell
 # add the xunit project
