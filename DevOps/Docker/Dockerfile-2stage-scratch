@@ -20,6 +20,9 @@ RUN dotnet publish "./dotnet-console/dotnet-console.csproj" -c Release -o /app/p
 WORKDIR /src/unit
 RUN dotnet test --logger "trx;LogFileName=UnitTests.trx" --results-directory /out/testresults /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:CoverletOutput=/out/testresults/coverage/
 
+FROM scratch as testresults
+COPY --from=build /out/testresults /out/testresults
+
 FROM base AS final
 WORKDIR /app
 COPY --from=build /app/publish .

@@ -48,3 +48,11 @@ In program.cs allow the unit test to get `internal` classes
 using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("unit")]
 ```
+
+## Getting Test Output from Docker
+
+https://seekatar.github.io/2022/04/17/docker-dotnet-unittest.html
+
+Uses --output and scratch stage to get output. Rancher doesn't support --output
+
+https://kevsoft.net/2021/08/09/exporting-unit-test-results-from-a-multi-stage-docker-build.html

@@ -85,15 +85,18 @@ foreach ($currentTask in $Tasks) {
                 if (!$NoRm) {
                     $extra += "--rm"
                 }
+                # else {
+                #     $extra += "--rm","false"
+                # }
                 if ($NoCache) {
                     $extra += "--no-cache"
                 }
-                Write-Verbose "Extra is $($extra | Out-String)"
+                Write-Verbose "Extra is $($extra -join ' ')"
                 $dir = Join-Path $PSScriptRoot src
                 Copy-Item (Join-Path $PSScriptRoot DevOps/Docker/*ocker*) $dir -Force
-                if ($NoBuildKit) {
-                    $env:DOCKER_BUILDKIT=0
-                }
+                $prevBuildKit = $env:DOCKER_BUILDKIT
+                $env:DOCKER_BUILDKIT=$NoBuildKit ? 0 : 1
+
                 executeSB -RelativeDir 'src' {
                     docker build  `
                                  --tag ${imageName}:$DockerTag `
@@ -103,20 +106,19 @@ foreach ($currentTask in $Tasks) {
                                  .
                 }
                 Remove-Item "$dir/*ocker*" -Fo -ErrorAction Ignore
-                if ($NoBuildKit) {
-                    $env:DOCKER_BUILDKIT=1 # default
-                }
+                $env:DOCKER_BUILDKIT=$prevBuildKit
             }
             'getDockerTest' {
                 executeSB {
-                    $unittestslayerid=$(docker images --filter "label=unittestlayer=true" -q | Select-Object -first 1)
-                    if ($unittestslayerid) {
-                        docker create --name unittestcontainer $unittestslayerid
-                        Remove-Item ./testresults/* -Recurse -Force -ErrorAction Ignore
+                    Remove-Item ./testresults/* -Recurse -Force -ErrorAction Ignore
+
+                    $imageId = docker images dotnet-console -q | Select-Object -first 1
+                    $unitTestLayerId=$(docker images --filter "label=unittestlayer=true" -q | Select-Object -first 1)
+                    if ($unitTestLayerId) {
+                        docker create --name unittestcontainer $unitTestLayerId
                         docker cp unittestcontainer:/out/testresults ./testresults
                         docker stop unittestcontainer
-                        docker rm unittestcontainer
-                        docker rmi $unittestslayerid
+                        $global:LASTEXITCODE = 0
                         if (Test-Path ./testresults/testresults/UnitTests.trx) {
                             $test = [xml](Get-Content .\testresults\testresults\UnitTests.trx -Raw)
                             $finish = [DateTime]::Parse($test.TestRun.Times.finish)
@@ -127,9 +129,23 @@ foreach ($currentTask in $Tasks) {
                             Write-Output "  Success is $($test.TestRun.ResultSummary.Counters.passed)/$($test.TestRun.ResultSummary.Counters.total)"
                         } else {
                             Write-Warning "No output found in ./testresults/testresults/UnitTests.trx"
+                            $global:LASTEXITCODE = 99
                         }
+
+                        if ($imageId -ne $unitTestLayerId) {
+                            # for two stage builds, won't be able to remove the image
+                            docker rm unittestcontainer
+                            if ( $LASTEXITCODE ) { Write-Warning "Removing container unittestcontainer $LASTEXITCODE" }
+                            docker rmi $unitTestLayerId
+                            if ( $LASTEXITCODE ) { Write-Warning "Removing image $unitTestLayerId $LASTEXITCODE" }
+                        } else {
+                            Write-Information "Not removing test image $unitTestLayerId as it is the same as the image we just built" -InformationAction Continue
+                        }
+
+                        $global:LASTEXITCODE = 0
                     } else {
                         Write-Warning "No image found with label unittestlayer=true"
+                        $global:LASTEXITCODE = 99
                     }
                 }
             }
