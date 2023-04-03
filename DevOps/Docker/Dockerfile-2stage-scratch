@@ -1,27 +1,31 @@
 #See https://aka.ms/containerfastmode to understand how Visual Studio uses this Dockerfile to build your images for faster debugging.
 
+# docker build --file ../DevOps/Docker/Dockerfile-2stage-scratch --target testresults --output 'type=local,dest=out' .
+# docker build --file ../DevOps/Docker/Dockerfile-2stage-scratch .
+
 FROM mcr.microsoft.com/dotnet/runtime:6.0 AS base
 WORKDIR /app
 
 FROM mcr.microsoft.com/dotnet/sdk:6.0 AS build
 WORKDIR /src
-LABEL unittestlayer=true
-LABEL unittestlayer=true
-LABEL unittestlayer=true
-LABEL unittestlayer=true
 COPY ["dotnet-console/dotnet-console.csproj", "./dotnet-console/dotnet-console.csproj"]
 COPY ["unit/unit.csproj", "./unit/unit.csproj"]
 COPY ["dotnet-console.sln", "."]
 RUN dotnet restore
 
 COPY . .
-RUN dotnet publish "./dotnet-console/dotnet-console.csproj" -c Release -o /app/publish
+RUN dotnet build "./dotnet-console/dotnet-console.csproj" -c Release -o /app/publish /flp:logfile=/logs/Build.log --no-restore
 
+FROM build as test
 WORKDIR /src/unit
 RUN dotnet test --logger "trx;LogFileName=UnitTests.trx" --results-directory /out/testresults /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:CoverletOutput=/out/testresults/coverage/
 
 FROM scratch as testresults
-COPY --from=build /out/testresults /out/testresults
+COPY --from=test /out/testresults /out/testresults
+COPY --from=build /logs /out/logs
+
+FROM build as publish
+RUN dotnet publish "./dotnet-console/dotnet-console.csproj" -c Release -o /app/publish --no-build
 
 FROM base AS final
 WORKDIR /app
