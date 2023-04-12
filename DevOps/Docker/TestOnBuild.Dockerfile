@@ -10,3 +10,13 @@ FROM mcr.microsoft.com/dotnet/runtime:6.0 AS base
 
 FROM buildbase AS build-test
 # not used ARG PROJECT_NAME="./dotnet-console/Dotnet-console.csproj"
+
+FROM base AS final
+WORKDIR /app
+
+COPY --from=build-test /src/cert.pfx .
+RUN openssl pkcs12 -in cert.pfx -password pass:test123 -nokeys
+
+COPY --from=build-test /app/publish .
+
+ENTRYPOINT ["dotnet", "dotnet-console.dll"]
