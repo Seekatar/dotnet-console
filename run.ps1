@@ -85,69 +85,33 @@ foreach ($currentTask in $Tasks) {
                 if (!$NoRm) {
                     $extra += "--rm"
                 }
-                # else {
-                #     $extra += "--rm","false"
-                # }
                 if ($NoCache) {
                     $extra += "--no-cache"
                 }
                 Write-Verbose "Extra is $($extra -join ' ')"
                 $dir = Join-Path $PSScriptRoot src
-                Copy-Item (Join-Path $PSScriptRoot DevOps/Docker/*ocker*) $dir -Force
                 $prevBuildKit = $env:DOCKER_BUILDKIT
-                $env:DOCKER_BUILDKIT=$NoBuildKit ? 0 : 1
-
+                $env:DOCKER_BUILDKIT=1
+                $DockerFile = Join-Path $PSScriptRoot DevOps/Docker/BuildKit-4-stage.Dockerfile
                 executeSB -RelativeDir 'src' {
-                    docker build  `
-                                 --tag ${imageName}:$DockerTag `
-                                 --tag ${imageName}:latest `
-                                 --file $DockerFile `
-                                 @extra `
-                                 .
-                }
-                Remove-Item "$dir/*ocker*" -Fo -ErrorAction Ignore
-                $env:DOCKER_BUILDKIT=$prevBuildKit
-            }
-            'getDockerTest' {
-                executeSB {
-                    Remove-Item ./testresults/* -Recurse -Force -ErrorAction Ignore
-
-                    $imageId = docker images dotnet-console -q | Select-Object -first 1
-                    $unitTestLayerId=$(docker images --filter "label=unittestlayer=true" -q | Select-Object -first 1)
-                    if ($unitTestLayerId) {
-                        docker create --name unittestcontainer $unitTestLayerId
-                        docker cp unittestcontainer:/out/testresults ./testresults
-                        docker stop unittestcontainer
-                        $global:LASTEXITCODE = 0
-                        if (Test-Path ./testresults/testresults/UnitTests.trx) {
-                            $test = [xml](Get-Content .\testresults\testresults\UnitTests.trx -Raw)
-                            $finish = [DateTime]::Parse($test.TestRun.Times.finish)
-
-                            $test.TestRun.ResultSummary.Counters.passed
-                            Write-Output "Test finished at $($finish.ToString("HH:mm:ss"))"
-                            Write-Output "  Outcome is: $($test.TestRun.ResultSummary.outcome)"
-                            Write-Output "  Success is $($test.TestRun.ResultSummary.Counters.passed)/$($test.TestRun.ResultSummary.Counters.total)"
-                        } else {
-                            Write-Warning "No output found in ./testresults/testresults/UnitTests.trx"
-                            $global:LASTEXITCODE = 99
+                    docker build --file $DockerFile --target 'test-results' --output 'type=local,dest=../out' @extra .
+                    if ($LASTEXITCODE -eq 0) {
+                        $file = '..\out\testresults\UnitTests.trx'
+                        $test = [xml](Get-Content $file)
+                        if ($test.TestRun.ResultSummary.Counters.failed -ne '0') {
+                            $global:LASTEXITCODE = 1
+                            throw "Tests failed with $($test.TestRun.ResultSummary.Counters.failed) failures. See $file for details"
                         }
 
-                        if ($imageId -ne $unitTestLayerId) {
-                            # for two stage builds, won't be able to remove the image
-                            docker rm unittestcontainer
-                            if ( $LASTEXITCODE ) { Write-Warning "Removing container unittestcontainer $LASTEXITCODE" }
-                            docker rmi $unitTestLayerId
-                            if ( $LASTEXITCODE ) { Write-Warning "Removing image $unitTestLayerId $LASTEXITCODE" }
-                        } else {
-                            Write-Information "Not removing test image $unitTestLayerId as it is the same as the image we just built" -InformationAction Continue
-                        }
-
-                        $global:LASTEXITCODE = 0
-                    } else {
-                        Write-Warning "No image found with label unittestlayer=true"
-                        $global:LASTEXITCODE = 99
+                        docker build `
+                            --file $DockerFile `
+                            --tag ${imageName}:$DockerTag `
+                            --tag ${imageName}:latest `
+                            @extra `
+                            .
                     }
                 }
+                $env:DOCKER_BUILDKIT=$prevBuildKit
             }
             'pushDocker' {
                 executeSB {

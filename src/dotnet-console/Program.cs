@@ -1,14 +1,22 @@
 ﻿using System.Runtime.CompilerServices;
+using static System.Console;
 
 [assembly: InternalsVisibleTo("unit")]
 
-Console.WriteLine($"Hello, World! at {DateTime.Now}");
+WriteLine($"Hello, World! at {DateTime.Now}");
 
 WaitFor waitFor = new (args);
 
-Console.WriteLine($"Waiting for {waitFor.WaitingFor.TotalMinutes} minutes!");
+WriteLine($"Waiting for {waitFor.WaitingFor.TotalMinutes} minutes!");
+
+// create a timer to log a message every 3 seconds to show the app is still running.
+var timer = new System.Timers.Timer(TimeSpan.FromSeconds(3).TotalMilliseconds);
+timer.Elapsed += (sender, e) => WriteLine($"Still waiting at {DateTime.Now}");
+timer.Start();
 
 await waitFor.WaitForIt();
+
+WriteLine("All done!");
 
 // stupid little class added for testing.
 internal class WaitFor

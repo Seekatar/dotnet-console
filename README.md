@@ -51,7 +51,9 @@ using System.Runtime.CompilerServices;
 
 ## Getting Test Output from Docker
 
-https://seekatar.github.io/2022/04/17/docker-dotnet-unittest.html
+[My blog on it](https://seekatar.github.io/2023/04/12/docker-dotnet-unittest.html)
+
+Note that `.dockerignore` is important without it the `dotnet test` seems to be skipped and then the stage that copies the log file fails.
 
 Uses --output and scratch stage to get output. Rancher doesn't support --output
 
