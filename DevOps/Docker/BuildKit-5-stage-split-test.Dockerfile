@@ -1,5 +1,6 @@
 # in src folder
-# docker build --file ../DevOps/Docker/BuildKit-5-stage-split-test.Dockerfile --target 'test-results' --output 'type=local,dest=../out' --progress plain .
+# docker build --file ../DevOps/Docker/BuildKit-5-stage-split-test.Dockerfile --target 'test-results' --output 'type=local,dest=../out'  .
+# docker build --file ../DevOps/Docker/BuildKit-5-stage-split-test.Dockerfile --target 'build'  .
 # docker build --file ../DevOps/Docker/BuildKit-5-stage-split-test.Dockerfile -t dotnet-console .
 
 

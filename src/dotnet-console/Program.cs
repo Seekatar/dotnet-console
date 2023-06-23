@@ -1,11 +1,22 @@
 ﻿using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Configuration;
 using static System.Console;
 
 [assembly: InternalsVisibleTo("unit")]
 
-WriteLine($"Hello, World! at {DateTime.Now}");
+Environment.SetEnvironmentVariable("NETCORE_ENVIRONMENT", "Development");
+Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Development");
+var configuration = new ConfigurationBuilder()
+    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")}.json", optional: true)
+    .AddEnvironmentVariables()
+    .Build();
 
-WaitFor waitFor = new (args);
+var time = float.TryParse(configuration["Time"], out var timeValue) ? timeValue : 1.0f;
+
+WriteLine($"Hello, World! at {DateTime.Now}. Will wait for {time} minutes.");
+
+WaitFor waitFor = new (time);
 
 WriteLine($"Waiting for {waitFor.WaitingFor.TotalMinutes} minutes!");
 
@@ -23,9 +34,9 @@ internal class WaitFor
 {
     public TimeSpan WaitingFor { get; init; }
 
-    public WaitFor(string[] args)
+    public WaitFor(double time)
     {
-        WaitingFor = args.Length > 0 ? TimeSpan.FromMinutes(Double.Parse(args[0])) : TimeSpan.FromMinutes(1);
+        WaitingFor = TimeSpan.FromMinutes(time);
     }
 
     internal async Task WaitForIt()
